@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "arb-ws.fullname" . }}
+  labels:
+    {{- include "arb-ws.labels" . | nindent 4 }}
+data:
+  HTTP_ADDR: {{ .Values.env.HTTP_ADDR | quote }}
+  EDGE_MIN_ROR_PCT: {{ .Values.env.EDGE_MIN_ROR_PCT | quote }}
+  TITLE_SIM: {{ .Values.env.TITLE_SIM | quote }}
+  TIME_WINDOW_H: {{ .Values.env.TIME_WINDOW_H | quote }}
+  PM_CHUNK: {{ .Values.env.PM_CHUNK | quote }}

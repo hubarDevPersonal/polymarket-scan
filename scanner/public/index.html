@@ -1,0 +1,1238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Polymarket Orderbook Scanner</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0f1117;
+    --bg2: #161922;
+    --bg3: #1c1f2b;
+    --bg-card: #1a1d28;
+    --border: #282d3d;
+    --border-hover: #3a4058;
+    --text: #d1d5e0;
+    --text-dim: #636981;
+    --text-muted: #4a5068;
+    --text-accent: #8b9dc3;
+    --accent: #6c8aec;
+    --accent-dim: rgba(108,138,236,0.12);
+    --success: #4ade80;
+    --success-dim: rgba(74,222,128,0.12);
+    --danger: #f87171;
+    --danger-dim: rgba(248,113,113,0.12);
+    --warn: #fbbf24;
+    --warn-dim: rgba(251,191,36,0.12);
+    --purple: #a78bfa;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+    --radius: 8px;
+    --radius-sm: 6px;
+  }
+
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; line-height: 1.5; overflow: hidden; height: 100vh; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }
+
+  /* Header */
+  .header { display: flex; align-items: center; justify-content: space-between; padding: 10px 20px; background: var(--bg2); border-bottom: 1px solid var(--border); }
+  .header h1 { font-size: 14px; font-weight: 600; color: var(--text); letter-spacing: -0.3px; }
+  .header h1 span { color: var(--accent); }
+  .status { display: flex; gap: 16px; font-size: 12px; color: var(--text-dim); }
+  .status-item { display: flex; align-items: center; gap: 6px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); transition: background 0.3s; }
+  .dot.on { background: var(--success); box-shadow: 0 0 6px rgba(74,222,128,0.3); }
+
+  /* Tab bar */
+  .tab-bar { display: flex; background: var(--bg2); border-bottom: 1px solid var(--border); gap: 2px; padding: 0 12px; }
+  .tab { padding: 10px 16px; font-size: 13px; font-weight: 500; color: var(--text-dim); cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s; border-radius: 4px 4px 0 0; }
+  .tab:hover { color: var(--text); background: rgba(108,138,236,0.05); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab .badge { display: inline-block; background: var(--warn); color: #000; font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 10px; margin-left: 6px; min-width: 18px; text-align: center; }
+
+  /* Main layout */
+  .main { display: flex; height: calc(100vh - 77px); }
+
+  /* Left panel - events */
+  .events-panel { width: 300px; min-width: 300px; border-right: 1px solid var(--border); display: flex; flex-direction: column; background: var(--bg); }
+  .panel-header { padding: 10px 14px; background: var(--bg2); border-bottom: 1px solid var(--border); font-size: 12px; font-weight: 500; color: var(--text-dim); display: flex; justify-content: space-between; align-items: center; }
+  .events-list { flex: 1; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+  .event-item { padding: 10px 14px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.2s; }
+  .event-item:hover { background: var(--bg2); }
+  .event-item.selected { background: var(--bg3); border-left: 3px solid var(--accent); }
+  .event-title { font-size: 13px; color: var(--text); margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .event-meta { font-size: 11px; color: var(--text-dim); display: flex; gap: 12px; font-family: var(--mono); }
+
+  /* Right panel */
+  .content-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .content-header { padding: 10px 16px; background: var(--bg2); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .content-title { font-size: 13px; font-weight: 500; color: var(--text-accent); }
+  .content-body { flex: 1; overflow-y: auto; padding: 14px; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+
+  /* View sections (toggled by tabs) */
+  .view { display: none; }
+  .view.active { display: block; }
+
+  /* Markets grid */
+  .markets-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; }
+  .market-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; cursor: pointer; transition: all 0.2s; position: relative; }
+  .market-card:hover { border-color: var(--border-hover); background: var(--bg3); }
+  .market-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .market-card.has-opp { border-color: var(--warn); box-shadow: 0 0 8px rgba(251,191,36,0.1); }
+  .opp-badge { position: absolute; top: 8px; right: 8px; background: var(--warn); color: #000; font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: var(--radius-sm); font-family: var(--mono); }
+  .market-question { font-size: 13px; color: var(--text); margin-bottom: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .market-outcome { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: var(--radius-sm); margin-right: 6px; font-weight: 500; font-family: var(--mono); }
+  .market-outcome.yes { background: var(--success-dim); color: var(--success); }
+  .market-outcome.no { background: var(--danger-dim); color: var(--danger); }
+
+  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 8px; }
+  .metric { text-align: center; }
+  .metric-label { font-size: 10px; color: var(--text-dim); font-weight: 500; }
+  .metric-value { font-size: 12px; color: var(--text); font-weight: 600; font-family: var(--mono); }
+  .metric-value.bid { color: var(--success); }
+  .metric-value.ask { color: var(--danger); }
+  .metric-value.spread { color: var(--warn); }
+
+  /* Book detail */
+  .book-detail { margin-top: 16px; }
+  .section-title { font-size: 11px; font-weight: 600; color: var(--accent); letter-spacing: 0.3px; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+
+  .ladder { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 12px; font-family: var(--mono); }
+  .ladder-side { display: flex; flex-direction: column; }
+  .ladder-header { display: grid; grid-template-columns: 1fr 1fr 1fr; padding: 6px 8px; font-size: 10px; color: var(--text-dim); font-weight: 500; background: var(--bg3); border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
+  .ladder-row { display: grid; grid-template-columns: 1fr 1fr 1fr; padding: 3px 8px; position: relative; }
+  .ladder-row .bar { position: absolute; top: 0; bottom: 0; opacity: 0.1; }
+  .ladder-row.bid .bar { right: 0; background: var(--success); }
+  .ladder-row.ask .bar { left: 0; background: var(--danger); }
+  .ladder-row.bid { text-align: right; color: var(--success); }
+  .ladder-row.ask { color: var(--danger); }
+  .ladder-row span { position: relative; z-index: 1; }
+
+  .data-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 14px; font-family: var(--mono); }
+  .data-table th { text-align: left; padding: 6px 10px; color: var(--text-dim); font-size: 10px; font-weight: 500; border-bottom: 1px solid var(--border); }
+  .data-table td { padding: 5px 10px; border-bottom: 1px solid rgba(40,45,61,0.5); }
+  .data-table tr:hover td { background: var(--bg3); }
+
+  /* Opportunities panel */
+  .opp-card { background: var(--bg-card); border: 1px solid var(--warn); border-radius: var(--radius); padding: 12px; margin-bottom: 10px; cursor: pointer; transition: all 0.2s; }
+  .opp-card:hover { background: var(--bg3); }
+  .opp-card.stable { border-color: var(--danger); box-shadow: 0 0 10px rgba(248,113,113,0.1); }
+  .opp-card.vanished { opacity: 0.5; border-color: var(--border); }
+  .opp-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .opp-label { font-size: 13px; color: var(--text); max-width: 70%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .opp-status { font-size: 10px; padding: 3px 8px; border-radius: var(--radius-sm); font-weight: 600; }
+  .opp-status.new { background: var(--warn-dim); color: var(--warn); }
+  .opp-status.stable { background: var(--danger-dim); color: var(--danger); }
+  .opp-status.vanished { background: rgba(40,45,61,0.5); color: var(--text-dim); }
+  .opp-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+
+  /* Notifications */
+  .notif-item { padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 13px; transition: background 0.2s; }
+  .notif-item:hover { background: var(--bg2); }
+  .notif-item.unread { border-left: 3px solid var(--warn); }
+  .notif-item.severity-critical { border-left-color: var(--danger); }
+  .notif-item.severity-warn { border-left-color: var(--warn); }
+  .notif-item.severity-info { border-left-color: var(--accent); }
+  .notif-header { display: flex; justify-content: space-between; margin-bottom: 4px; }
+  .notif-title { font-weight: 600; font-size: 13px; }
+  .notif-time { font-size: 11px; color: var(--text-dim); font-family: var(--mono); }
+  .notif-body { font-size: 12px; color: var(--text-dim); }
+
+  /* Settings */
+  .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; max-width: 640px; }
+  .setting-group { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
+  .setting-group h3 { font-size: 12px; font-weight: 600; color: var(--accent); margin-bottom: 10px; }
+  .setting-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .setting-label { font-size: 13px; color: var(--text-dim); }
+  .setting-input { background: var(--bg3); border: 1px solid var(--border); color: var(--text); font-family: var(--mono); font-size: 13px; padding: 6px 10px; width: 90px; text-align: right; border-radius: var(--radius-sm); transition: all 0.2s; }
+  .setting-input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 2px rgba(108,138,236,0.2); }
+  .btn { background: var(--bg3); border: 1px solid var(--border); color: var(--accent); font-family: var(--sans); font-size: 13px; font-weight: 500; padding: 7px 16px; border-radius: var(--radius-sm); cursor: pointer; transition: all 0.2s; }
+  .btn:hover { background: var(--border); border-color: var(--border-hover); }
+
+  .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 200px; color: var(--text-dim); gap: 8px; }
+  @keyframes pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+  .loading { animation: pulse 1.5s infinite; }
+
+  .log-bar { padding: 6px 16px; background: var(--bg2); border-top: 1px solid var(--border); font-size: 11px; color: var(--text-dim); font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Compare tab */
+  .compare-controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; padding: 12px 14px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); }
+  .compare-controls label { font-size: 12px; color: var(--text-dim); font-weight: 500; }
+  .compare-controls select, .compare-controls input[type="number"] {
+    background: var(--bg3); border: 1px solid var(--border); color: var(--text); font-family: var(--mono);
+    font-size: 13px; padding: 6px 10px; border-radius: var(--radius-sm); min-width: 80px; transition: all 0.2s;
+  }
+  .compare-controls select:focus, .compare-controls input[type="number"]:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 2px rgba(108,138,236,0.2); }
+  .compare-btn { background: var(--accent); color: #fff; border: none; font-family: var(--sans); font-size: 13px; font-weight: 500; padding: 7px 20px; border-radius: var(--radius-sm); cursor: pointer; transition: all 0.2s; }
+  .compare-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+  .compare-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  .compare-layout { display: grid; grid-template-columns: 1fr 280px; gap: 14px; height: calc(100% - 70px); }
+  .compare-chart-area { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; min-height: 350px; position: relative; }
+  .compare-sidebar { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+
+  .event-selector { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
+  .event-selector h4 { font-size: 11px; font-weight: 600; color: var(--accent); margin-bottom: 10px; }
+  .event-selector .event-option { padding: 8px 10px; margin-bottom: 6px; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; font-size: 12px; transition: all 0.2s; }
+  .event-selector .event-option:hover { border-color: var(--border-hover); background: var(--bg3); }
+  .event-selector .event-option.selected { border-color: var(--accent); background: var(--accent-dim); }
+  .event-option-title { color: var(--text); margin-bottom: 3px; }
+  .event-option-date { color: var(--text-dim); font-size: 10px; font-family: var(--mono); }
+
+  .outcome-checkboxes { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
+  .outcome-checkboxes h4 { font-size: 11px; font-weight: 600; color: var(--accent); margin-bottom: 10px; }
+  .outcome-check { display: flex; align-items: center; gap: 8px; padding: 5px 0; cursor: pointer; font-size: 13px; }
+  .outcome-check input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; width: 15px; height: 15px; }
+  .outcome-check .outcome-label { color: var(--text); flex: 1; }
+  .outcome-check .outcome-price { color: var(--text-dim); font-size: 12px; font-family: var(--mono); }
+  .outcome-line-color { width: 14px; height: 3px; border-radius: 2px; flex-shrink: 0; }
+
+  .compare-loading { display: flex; align-items: center; justify-content: center; height: 200px; color: var(--text-dim); font-size: 14px; }
+  .compare-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-dim); gap: 10px; }
+  .compare-empty .hint { font-size: 13px; text-align: center; max-width: 340px; line-height: 1.6; }
+
+  .compare-legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px; font-size: 11px; }
+  .compare-legend-item { display: flex; align-items: center; gap: 5px; color: var(--text-dim); }
+  .compare-legend-dot { width: 12px; height: 3px; border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Polymarket <span>Scanner</span></h1>
+  <div class="status">
+    <div class="status-item"><div class="dot" id="wsDot"></div><span id="wsStatus">WS: ...</span></div>
+    <div class="status-item"><span id="eventCount">Events: -</span></div>
+    <div class="status-item"><span id="bookCount">Tokens: -</span></div>
+    <div class="status-item"><span id="oppCount" style="color:var(--warn)">Opps: 0</span></div>
+    <div class="status-item"><span id="clock"></span></div>
+  </div>
+</div>
+
+<div class="tab-bar">
+  <div class="tab active" onclick="switchTab('orderbooks')">Orderbooks</div>
+  <div class="tab" onclick="switchTab('opportunities')">Opportunities <span class="badge" id="oppBadge" style="display:none">0</span></div>
+  <div class="tab" onclick="switchTab('notifications')">Alerts <span class="badge" id="notifBadge" style="display:none">0</span></div>
+  <div class="tab" onclick="switchTab('compare')">Compare</div>
+  <div class="tab" onclick="switchTab('settings')">Settings</div>
+</div>
+
+<div class="main">
+  <div class="events-panel">
+    <div class="panel-header"><span>Crypto Hit-Price Events</span></div>
+    <div class="events-list" id="eventsList"><div class="empty-state loading"><div>Discovering markets...</div></div></div>
+  </div>
+
+  <div class="content-panel">
+    <div class="content-header">
+      <span class="content-title" id="contentTitle">Select an event to view orderbooks</span>
+    </div>
+    <div class="content-body">
+
+      <!-- Tab: Orderbooks -->
+      <div class="view active" id="view-orderbooks">
+        <div id="marketCards"></div>
+        <div id="tokenDetail" class="book-detail"></div>
+      </div>
+
+      <!-- Tab: Opportunities -->
+      <div class="view" id="view-opportunities">
+        <div id="oppList"></div>
+      </div>
+
+      <!-- Tab: Notifications -->
+      <div class="view" id="view-notifications">
+        <div style="margin-bottom:8px"><button class="btn" onclick="markAllRead()">Mark All Read</button></div>
+        <div id="notifList"></div>
+      </div>
+
+      <!-- Tab: Compare -->
+      <div class="view" id="view-compare">
+        <div class="compare-controls">
+          <label>Coin</label>
+          <select id="cmp-coin">
+            <option value="btc">BTC</option>
+            <option value="eth">ETH</option>
+            <option value="sol">SOL</option>
+          </select>
+          <label>Period</label>
+          <select id="cmp-period">
+            <option value="monthly">Monthly</option>
+            <option value="weekly">Weekly</option>
+          </select>
+          <label>Year</label>
+          <input type="number" id="cmp-year" value="2025" min="2023" max="2026" style="width:70px">
+          <label>Month</label>
+          <select id="cmp-month">
+            <option value="1">Jan</option><option value="2">Feb</option><option value="3">Mar</option>
+            <option value="4">Apr</option><option value="5">May</option><option value="6">Jun</option>
+            <option value="7">Jul</option><option value="8">Aug</option><option value="9">Sep</option>
+            <option value="10">Oct</option><option value="11">Nov</option><option value="12">Dec</option>
+          </select>
+          <button class="compare-btn" id="cmp-load" onclick="loadComparison()">Load Data</button>
+          <button class="compare-btn" id="cmp-sync-db" onclick="syncToClickHouse()" style="background:var(--warn);color:#000;margin-left:4px" title="Sync current coin/month data to ClickHouse">Sync to DB</button>
+          <span id="cmp-status" style="font-size:10px;color:var(--text-dim)"></span>
+          <span id="db-status" style="font-size:10px;color:var(--text-dim);margin-left:8px"></span>
+        </div>
+        <div class="compare-layout">
+          <div class="compare-chart-area">
+            <canvas id="compareChart"></canvas>
+            <div class="compare-empty" id="cmp-empty">
+              <div style="font-size:24px;opacity:0.3">&#x1F4C8;</div>
+              <div class="hint">Select a coin and period, then click Load Data to compare Binance price history with Polymarket prediction outcomes</div>
+            </div>
+          </div>
+          <div class="compare-sidebar">
+            <div class="event-selector">
+              <h4>Polymarket Events</h4>
+              <div id="cmp-events"><div style="font-size:10px;color:var(--text-dim)">Load data to see events</div></div>
+            </div>
+            <div class="outcome-checkboxes">
+              <h4>Outcomes to Overlay</h4>
+              <div id="cmp-outcomes"><div style="font-size:10px;color:var(--text-dim)">Select an event to see outcomes</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SQL Query Panel -->
+        <div class="sql-panel" id="sql-panel" style="margin-top:12px;display:none">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+            <h4 style="margin:0;color:var(--accent);font-size:13px;font-weight:600">SQL Query</h4>
+            <select id="sql-templates" onchange="loadSqlTemplate()" style="background:var(--bg3);color:var(--text);border:1px solid var(--border);padding:5px 10px;font-size:12px;border-radius:var(--radius-sm);font-family:var(--sans)">
+              <option value="">Custom query...</option>
+              <option value="stats">Table stats</option>
+              <option value="events">Events summary</option>
+              <option value="daily">Daily comparison</option>
+              <option value="top_tokens">Top tokens by data points</option>
+              <option value="price_range">Price history date range</option>
+            </select>
+            <button class="compare-btn" onclick="runSqlQuery()" style="padding:5px 16px;font-size:12px">Run</button>
+            <span id="sql-status" style="font-size:11px;color:var(--text-dim);font-family:var(--mono)"></span>
+          </div>
+          <textarea id="sql-input" style="width:100%;height:90px;background:var(--bg3);color:var(--success);border:1px solid var(--border);padding:10px;font-family:var(--mono);font-size:12px;resize:vertical;border-radius:var(--radius-sm);line-height:1.5" placeholder="SELECT * FROM scanner.events LIMIT 10"></textarea>
+          <div id="sql-results" style="max-height:300px;overflow:auto;margin-top:8px"></div>
+        </div>
+      </div>
+
+      <!-- Tab: Settings -->
+      <div class="view" id="view-settings">
+        <div class="settings-grid">
+          <div class="setting-group">
+            <h3>Spread Detector</h3>
+            <div class="setting-row"><span class="setting-label">Spread threshold (bps)</span><input class="setting-input" id="cfg-spreadThresholdBps" type="number" value="500"></div>
+            <div class="setting-row"><span class="setting-label">Min depth each side ($)</span><input class="setting-input" id="cfg-minDepthUsd" type="number" value="5"></div>
+            <div class="setting-row"><span class="setting-label">Depth range (bps)</span><input class="setting-input" id="cfg-depthBps" type="number" value="50"></div>
+          </div>
+          <div class="setting-group">
+            <h3>Stability &amp; Activity</h3>
+            <div class="setting-row"><span class="setting-label">Stability checks</span><input class="setting-input" id="cfg-stabilityChecks" type="number" value="3"></div>
+            <div class="setting-row"><span class="setting-label">Min recent trades</span><input class="setting-input" id="cfg-minRecentTrades" type="number" value="0"></div>
+            <div class="setting-row"><span class="setting-label">Trade window (sec)</span><input class="setting-input" id="cfg-tradeWindowSec" type="number" value="300"></div>
+          </div>
+        </div>
+        <div style="margin-top:12px"><button class="btn" onclick="saveConfig()">Apply Settings</button> <span id="cfgStatus" style="font-size:10px;color:var(--success);margin-left:8px"></span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="log-bar" id="logBar">Ready</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+
+let state = {
+  events: [],
+  selectedEventId: null,
+  selectedTokenId: null,
+  booksData: {},
+  bookAnalytics: {},
+  opportunities: [],
+  notifications: [],
+  activeTab: 'orderbooks',
+};
+
+setInterval(() => { $('#clock').textContent = new Date().toLocaleTimeString(); }, 1000);
+
+// ─── Tabs ──────────────────────────────────────────────────────────
+function switchTab(tab) {
+  state.activeTab = tab;
+  $$('.tab').forEach(t => t.classList.remove('active'));
+  $$('.view').forEach(v => v.classList.remove('active'));
+  document.querySelector(`.tab[onclick*="${tab}"]`)?.classList.add('active');
+  $(`#view-${tab}`)?.classList.add('active');
+
+  if (tab === 'opportunities') fetchOpportunities();
+  if (tab === 'notifications') fetchNotifications();
+  if (tab === 'settings') fetchConfig();
+  if (tab === 'compare') initCompareTab();
+}
+
+// ─── SSE ───────────────────────────────────────────────────────────
+function connectSSE() {
+  const es = new EventSource('/api/stream');
+
+  es.addEventListener('init', e => {
+    const d = JSON.parse(e.data);
+    updateWSStatus(d.wsConnected);
+    log(`Connected. ${d.eventCount} events loaded.`);
+  });
+
+  es.addEventListener('status', e => {
+    const d = JSON.parse(e.data);
+    if (d.type === 'ws') updateWSStatus(d.connected);
+    else if (d.type === 'discovery') {
+      $('#eventCount').textContent = `Events: ${d.eventCount}`;
+      $('#bookCount').textContent = `Tokens: ${d.tokenCount}`;
+      log(`Discovery: ${d.eventCount} events, ${d.tokenCount} tokens`);
+    }
+  });
+
+  es.addEventListener('update', e => {
+    const d = JSON.parse(e.data);
+    if (d.type === 'events_refreshed') fetchEvents();
+  });
+
+  es.addEventListener('book', e => {
+    const d = JSON.parse(e.data);
+    if (d.tokenId && d.analytics) {
+      state.bookAnalytics[d.tokenId] = d.analytics;
+      if (state.selectedEventId) scheduleCardRefresh();
+      if (state.selectedTokenId === d.tokenId) fetchAndShowLadder(d.tokenId);
+    }
+  });
+
+  es.addEventListener('opportunity', e => {
+    const opp = JSON.parse(e.data);
+    // Update local opp list
+    const idx = state.opportunities.findIndex(o => o.tokenId === opp.tokenId);
+    if (opp.status === 'vanished' || opp.status === 'thinned') {
+      if (idx >= 0) state.opportunities.splice(idx, 1);
+    } else {
+      if (idx >= 0) state.opportunities[idx] = opp;
+      else state.opportunities.push(opp);
+    }
+    updateOppBadge();
+    if (state.activeTab === 'opportunities') renderOpportunities();
+    if (state.activeTab === 'orderbooks') scheduleCardRefresh();
+  });
+
+  es.addEventListener('notification', e => {
+    const notif = JSON.parse(e.data);
+    state.notifications.unshift(notif);
+    if (state.notifications.length > 100) state.notifications = state.notifications.slice(0, 100);
+    updateNotifBadge();
+    if (state.activeTab === 'notifications') renderNotifications();
+    // Flash log bar
+    if (notif.severity === 'critical' || notif.severity === 'alert') {
+      log(`[${notif.severity.toUpperCase()}] ${notif.title}: ${notif.body}`);
+    }
+  });
+
+  es.onerror = () => { log('SSE reconnecting...'); setTimeout(connectSSE, 3000); };
+}
+
+function updateWSStatus(c) {
+  $('#wsDot').className = c ? 'dot on' : 'dot';
+  $('#wsStatus').textContent = c ? 'WS: Live' : 'WS: Off';
+}
+
+function log(msg) { $('#logBar').textContent = `[${new Date().toLocaleTimeString()}] ${msg}`; }
+
+// ─── Events ────────────────────────────────────────────────────────
+async function fetchEvents() {
+  try {
+    const res = await fetch('/api/events');
+    state.events = await res.json();
+    renderEvents();
+    $('#eventCount').textContent = `Events: ${state.events.length}`;
+  } catch (err) { log(`Events error: ${err.message}`); }
+}
+
+function renderEvents() {
+  const el = $('#eventsList');
+  if (!state.events.length) { el.innerHTML = '<div class="empty-state"><div>No events found</div></div>'; return; }
+  el.innerHTML = state.events.map(ev => {
+    const sel = ev.id === state.selectedEventId ? 'selected' : '';
+    const mc = (ev.markets || []).length;
+    return `<div class="event-item ${sel}" onclick="selectEvent('${ev.id}')">
+      <div class="event-title">${esc(ev.title)}</div>
+      <div class="event-meta"><span>${mc} mkts</span><span>${fmtVol(ev.volumeNum||ev.volume||0)}</span></div>
+    </div>`;
+  }).join('');
+}
+
+async function selectEvent(eventId) {
+  state.selectedEventId = eventId;
+  state.selectedTokenId = null;
+  renderEvents();
+  const ev = state.events.find(e => e.id === eventId);
+  $('#contentTitle').textContent = ev ? ev.title : 'Loading...';
+  switchTab('orderbooks');
+  try {
+    const res = await fetch(`/api/event/${eventId}/books`);
+    const data = await res.json();
+    state.booksData[eventId] = data;
+    renderBooks(data);
+    log(`Loaded ${data.books?.length || 0} books`);
+  } catch (err) { log(`Books error: ${err.message}`); }
+}
+
+// ─── Book cards ────────────────────────────────────────────────────
+let _crt = null;
+function scheduleCardRefresh() {
+  if (_crt) return;
+  _crt = setTimeout(() => { _crt = null; if (state.selectedEventId && state.booksData[state.selectedEventId]) renderBookCards(state.booksData[state.selectedEventId]); }, 500);
+}
+
+function renderBooks(data) {
+  renderBookCards(data);
+  if (state.selectedTokenId) fetchAndShowLadder(state.selectedTokenId);
+}
+
+function renderBookCards(data) {
+  const el = $('#marketCards');
+  if (!data.books?.length) { el.innerHTML = '<div class="empty-state"><div>No orderbook data</div></div>'; return; }
+
+  const yesBooks = data.books.filter(b => b.outcome === 'Yes');
+  const allBooks = yesBooks.length > 0 ? yesBooks : data.books;
+  const oppSet = new Set(state.opportunities.map(o => o.tokenId));
+
+  let html = '<div class="markets-grid">';
+  for (const bk of allBooks) {
+    const a = state.bookAnalytics[bk.tokenId] || bk.analytics;
+    const sel = state.selectedTokenId === bk.tokenId ? 'selected' : '';
+    const hasOpp = oppSet.has(bk.tokenId) ? 'has-opp' : '';
+    const tob = a?.topOfBook || {};
+    const opp = state.opportunities.find(o => o.tokenId === bk.tokenId);
+
+    html += `<div class="market-card ${sel} ${hasOpp}" onclick="selectToken('${bk.tokenId}')">
+      ${opp ? `<div class="opp-badge">${opp.spreadBps} bps</div>` : ''}
+      <div class="market-question" title="${esc(bk.question)}">${esc(bk.question)}</div>
+      <span class="market-outcome ${bk.outcome.toLowerCase()==='yes'?'yes':'no'}">${esc(bk.outcome)}</span>
+      <div class="metrics">
+        <div class="metric"><div class="metric-label">Bid</div><div class="metric-value bid">${tob.bestBid||'-'}</div></div>
+        <div class="metric"><div class="metric-label">Ask</div><div class="metric-value ask">${tob.bestAsk||'-'}</div></div>
+        <div class="metric"><div class="metric-label">Mid</div><div class="metric-value">${tob.mid||'-'}</div></div>
+        <div class="metric"><div class="metric-label">Spread</div><div class="metric-value spread">${tob.spreadBps?tob.spreadBps+' bps':'-'}</div></div>
+      </div>
+      ${a ? `<div class="metrics" style="margin-top:3px">
+        <div class="metric"><div class="metric-label">Bid Lvls</div><div class="metric-value">${a.bidLevels}</div></div>
+        <div class="metric"><div class="metric-label">Ask Lvls</div><div class="metric-value">${a.askLevels}</div></div>
+        <div class="metric"><div class="metric-label">Depth 25bp</div><div class="metric-value">$${a.depth25bps?.totalDepth||'0'}</div></div>
+        <div class="metric"><div class="metric-label">Imbalance</div><div class="metric-value">${a.depth25bps?.imbalance||'0'}</div></div>
+      </div>` : ''}
+    </div>`;
+  }
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+async function selectToken(tokenId) {
+  state.selectedTokenId = tokenId;
+  if (state.selectedEventId && state.booksData[state.selectedEventId]) renderBookCards(state.booksData[state.selectedEventId]);
+  await fetchAndShowLadder(tokenId);
+}
+
+async function fetchAndShowLadder(tokenId) {
+  const det = document.getElementById('tokenDetail');
+  if (!det) return;
+  det.innerHTML = '<div style="color:var(--text-dim)">Loading...</div>';
+  try {
+    const [lr, ar] = await Promise.all([fetch(`/api/book/${tokenId}/ladder`), fetch(`/api/book/${tokenId}`)]);
+    const ladder = lr.ok ? await lr.json() : null;
+    const analytics = ar.ok ? await ar.json() : null;
+    if (analytics) state.bookAnalytics[tokenId] = analytics;
+    if (state.selectedTokenId === tokenId) renderDetail(det, tokenId, ladder, analytics);
+  } catch (err) { if (state.selectedTokenId === tokenId) det.innerHTML = `<div style="color:var(--danger)">Error: ${err.message}</div>`; }
+}
+
+function renderDetail(el, tokenId, ladder, analytics) {
+  let h = '';
+  if (ladder) {
+    const mbs = Math.max(...(ladder.bids||[]).map(l => +l.size||0), 1);
+    const mas = Math.max(...(ladder.asks||[]).map(l => +l.size||0), 1);
+    h += `<div class="section-title">Orderbook Ladder</div><div class="ladder">
+      <div class="ladder-side"><div class="ladder-header"><span>Total</span><span>Size</span><span>Bid</span></div>
+        ${(ladder.bids||[]).map(l => `<div class="ladder-row bid"><div class="bar" style="width:${(+l.size/mbs*100).toFixed(0)}%"></div><span>${l.total}</span><span>${l.size}</span><span>${l.price}</span></div>`).join('')}
+      </div>
+      <div class="ladder-side"><div class="ladder-header"><span>Ask</span><span>Size</span><span>Total</span></div>
+        ${(ladder.asks||[]).map(l => `<div class="ladder-row ask"><div class="bar" style="width:${(+l.size/mas*100).toFixed(0)}%"></div><span>${l.price}</span><span>${l.size}</span><span>${l.total}</span></div>`).join('')}
+      </div></div>`;
+  }
+  if (analytics) {
+    h += `<div class="section-title" style="margin-top:12px">Depth Analysis</div>
+      <table class="data-table"><tr><th>BPS</th><th>Bid $</th><th>Ask $</th><th>Total $</th><th>Imbalance</th></tr>
+      ${[{l:'10',d:analytics.depth10bps},{l:'25',d:analytics.depth25bps},{l:'50',d:analytics.depth50bps}].map(r => `<tr><td>${r.l}</td><td style="color:var(--success)">${r.d?.bidDepth||'0'}</td><td style="color:var(--danger)">${r.d?.askDepth||'0'}</td><td>${r.d?.totalDepth||'0'}</td><td>${fmtImb(r.d?.imbalance)}</td></tr>`).join('')}</table>`;
+    if (analytics.slippage?.length) {
+      h += `<div class="section-title">Buy Slippage</div>
+        <table class="data-table"><tr><th>Qty</th><th>Avg Fill</th><th>Slip Mid</th><th>Slip Touch</th><th>Filled</th><th>Lvls</th></tr>
+        ${analytics.slippage.map(s => `<tr><td>${s.quantity}</td><td>${s.avgFillPrice}</td><td>${s.slippageFromMid}</td><td>${s.slippageFromTouch}</td><td>$${s.filled}</td><td>${s.levels}</td></tr>`).join('')}</table>`;
+    }
+    h += `<div style="margin-top:6px;font-size:10px;color:var(--text-dim)">Updated: ${new Date(analytics.updatedAt).toLocaleTimeString()} | Token: ${tokenId.substring(0,16)}...</div>`;
+  }
+  el.innerHTML = h;
+}
+
+// ─── Opportunities ─────────────────────────────────────────────────
+async function fetchOpportunities() {
+  try {
+    const res = await fetch('/api/opportunities');
+    state.opportunities = await res.json();
+    renderOpportunities();
+    updateOppBadge();
+  } catch {}
+}
+
+function renderOpportunities() {
+  const el = $('#oppList');
+  if (!state.opportunities.length) {
+    el.innerHTML = '<div class="empty-state"><div>No active opportunities</div><div style="font-size:11px">Wide-spread markets with sufficient depth will appear here</div></div>';
+    return;
+  }
+  el.innerHTML = state.opportunities.map(o => {
+    const cls = o.status === 'stable' ? 'stable' : '';
+    const age = Math.round((Date.now() - o.detectedAt) / 1000);
+    return `<div class="opp-card ${cls}" onclick="selectToken('${o.tokenId}');switchTab('orderbooks')">
+      <div class="opp-header">
+        <div class="opp-label" title="${esc(o.label||'')}">${esc(o.label || o.tokenId.substring(0,20))}</div>
+        <span class="opp-status ${o.status}">${o.status}</span>
+      </div>
+      <div class="opp-metrics">
+        <div class="metric"><div class="metric-label">Spread</div><div class="metric-value spread">${o.spreadBps} bps</div></div>
+        <div class="metric"><div class="metric-label">Bid $</div><div class="metric-value bid">${o.bestBid}</div></div>
+        <div class="metric"><div class="metric-label">Ask $</div><div class="metric-value ask">${o.bestAsk}</div></div>
+        <div class="metric"><div class="metric-label">Age</div><div class="metric-value">${age}s</div></div>
+      </div>
+      <div class="opp-metrics" style="margin-top:4px">
+        <div class="metric"><div class="metric-label">Bid Depth</div><div class="metric-value">$${o.bidDepthUsd?.toFixed(0)||0}</div></div>
+        <div class="metric"><div class="metric-label">Ask Depth</div><div class="metric-value">$${o.askDepthUsd?.toFixed(0)||0}</div></div>
+        <div class="metric"><div class="metric-label">Checks</div><div class="metric-value">${o.stabilityCount}</div></div>
+        <div class="metric"><div class="metric-label">Trades</div><div class="metric-value">${o.recentTrades}</div></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function updateOppBadge() {
+  const n = state.opportunities.length;
+  $('#oppCount').textContent = `Opps: ${n}`;
+  const badge = $('#oppBadge');
+  if (n > 0) { badge.style.display = 'inline-block'; badge.textContent = n; }
+  else badge.style.display = 'none';
+}
+
+// ─── Notifications ─────────────────────────────────────────────────
+async function fetchNotifications() {
+  try {
+    const res = await fetch('/api/notifications?limit=50');
+    state.notifications = await res.json();
+    renderNotifications();
+    updateNotifBadge();
+  } catch {}
+}
+
+function renderNotifications() {
+  const el = $('#notifList');
+  if (!state.notifications.length) { el.innerHTML = '<div class="empty-state"><div>No alerts yet</div></div>'; return; }
+  el.innerHTML = state.notifications.map(n => {
+    const unread = n.read ? '' : 'unread';
+    const sev = `severity-${n.severity}`;
+    const time = new Date(n.timestamp).toLocaleTimeString();
+    return `<div class="notif-item ${unread} ${sev}">
+      <div class="notif-header"><span class="notif-title">${esc(n.title)}</span><span class="notif-time">${time}</span></div>
+      <div class="notif-body">${esc(n.body)}</div>
+    </div>`;
+  }).join('');
+}
+
+function updateNotifBadge() {
+  const n = state.notifications.filter(x => !x.read).length;
+  const badge = $('#notifBadge');
+  if (n > 0) { badge.style.display = 'inline-block'; badge.textContent = n; }
+  else badge.style.display = 'none';
+}
+
+async function markAllRead() {
+  await fetch('/api/notifications/read', { method: 'POST' });
+  state.notifications.forEach(n => n.read = true);
+  renderNotifications();
+  updateNotifBadge();
+}
+
+// ─── Settings ──────────────────────────────────────────────────────
+async function fetchConfig() {
+  try {
+    const res = await fetch('/api/config/detector');
+    const cfg = await res.json();
+    $('#cfg-spreadThresholdBps').value = cfg.spreadThresholdBps || 500;
+    $('#cfg-minDepthUsd').value = cfg.minDepthUsd || 5;
+    $('#cfg-depthBps').value = cfg.depthBps || 50;
+    $('#cfg-stabilityChecks').value = cfg.stabilityChecks || 3;
+    $('#cfg-minRecentTrades').value = cfg.minRecentTrades || 0;
+    $('#cfg-tradeWindowSec').value = (cfg.tradeWindowMs || 300000) / 1000;
+  } catch {}
+}
+
+async function saveConfig() {
+  const cfg = {
+    spreadThresholdBps: +$('#cfg-spreadThresholdBps').value,
+    minDepthUsd: +$('#cfg-minDepthUsd').value,
+    depthBps: +$('#cfg-depthBps').value,
+    stabilityChecks: +$('#cfg-stabilityChecks').value,
+    minRecentTrades: +$('#cfg-minRecentTrades').value,
+    tradeWindowMs: +$('#cfg-tradeWindowSec').value * 1000,
+  };
+  await fetch('/api/config/detector', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(cfg) });
+  $('#cfgStatus').textContent = 'Saved!';
+  setTimeout(() => { $('#cfgStatus').textContent = ''; }, 2000);
+  log(`Detector config updated: spread=${cfg.spreadThresholdBps}bps, depth=$${cfg.minDepthUsd}`);
+}
+
+// ─── Helpers ───────────────────────────────────────────────────────
+function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function fmtVol(v) { if (typeof v==='string') v=+v||0; if (v>=1e6) return `$${(v/1e6).toFixed(1)}M`; if (v>=1e3) return `$${(v/1e3).toFixed(1)}K`; return `$${v.toFixed(0)}`; }
+function fmtImb(v) { if (!v) return '0'; const n=+v; return `<span style="color:${n>0?'var(--success)':n<0?'var(--danger)':'var(--text)'}">${(n*100).toFixed(1)}%</span>`; }
+
+// ─── Compare Tab ────────────────────────────────────────────────
+const OUTCOME_COLORS = ['#6c8aec','#fbbf24','#f87171','#a78bfa','#4ade80','#fb923c','#e879f9','#a3e635','#fb7185','#38bdf8'];
+let compareChart = null;
+let compareState = {
+  binanceData: null,
+  polyEvents: [],
+  selectedEventIdx: -1,
+  checkedOutcomes: new Map(),
+  initialized: false,
+};
+
+function initCompareTab() {
+  if (compareState.initialized) return;
+  compareState.initialized = true;
+}
+
+async function loadComparison() {
+  const coin = $('#cmp-coin').value;
+  const period = $('#cmp-period').value;
+  const year = +$('#cmp-year').value;
+  const month = +$('#cmp-month').value;
+
+  const btn = $('#cmp-load');
+  const statusEl = $('#cmp-status');
+  btn.disabled = true;
+  statusEl.textContent = 'Loading Binance data...';
+  statusEl.style.color = 'var(--accent)';
+
+  compareState.binanceData = null;
+  compareState.polyEvents = [];
+  compareState.selectedEventIdx = -1;
+  compareState.checkedOutcomes.clear();
+  $('#cmp-outcomes').innerHTML = '<div style="font-size:10px;color:var(--text-dim)">Select an event to see outcomes</div>';
+
+  try {
+    const binRes = await fetch(`/api/compare/binance/${coin}?interval=1d&year=${year}&month=${month}`);
+    if (!binRes.ok) throw new Error('Binance data fetch failed');
+    compareState.binanceData = await binRes.json();
+
+    statusEl.textContent = 'Loading Polymarket events...';
+
+    const polyRes = await fetch(`/api/compare/events/${coin}?limit=100&year=${year}&month=${month}`);
+    if (!polyRes.ok) throw new Error('Polymarket events fetch failed');
+    const polyData = await polyRes.json();
+
+    // Backend already filters by year/month, use results directly
+    compareState.polyEvents = polyData.events;
+
+    // Deduplicate by eventId
+    const seen = new Set();
+    compareState.polyEvents = compareState.polyEvents.filter(ev => {
+      if (seen.has(ev.eventId)) return false;
+      seen.add(ev.eventId);
+      return true;
+    });
+
+    renderCompareEvents();
+    renderCompareChart();
+
+    const binCount = compareState.binanceData.count;
+    const evCount = compareState.polyEvents.length;
+    statusEl.textContent = `${binCount} candles, ${evCount} events`;
+    statusEl.style.color = evCount > 0 ? 'var(--success)' : 'var(--warn)';
+  } catch (err) {
+    statusEl.textContent = `Error: ${err.message}`;
+    statusEl.style.color = 'var(--danger)';
+  }
+
+  btn.disabled = false;
+}
+
+function renderCompareEvents() {
+  const el = $('#cmp-events');
+  if (!compareState.polyEvents.length) {
+    el.innerHTML = '<div style="font-size:10px;color:var(--text-dim)">No events found for this period</div>';
+    return;
+  }
+
+  el.innerHTML = compareState.polyEvents.map((ev, idx) => {
+    const sel = idx === compareState.selectedEventIdx ? 'selected' : '';
+    const endStr = ev.endDate ? new Date(ev.endDate).toLocaleDateString() : '?';
+    const outcomeCount = ev.markets?.length || 0;
+    return `<div class="event-option ${sel}" onclick="selectCompareEvent(${idx})">
+      <div class="event-option-title">${esc(ev.title)}</div>
+      <div class="event-option-date">${endStr} · ${outcomeCount} outcomes</div>
+    </div>`;
+  }).join('');
+}
+
+async function selectCompareEvent(idx) {
+  compareState.selectedEventIdx = idx;
+  compareState.checkedOutcomes.clear();
+  renderCompareEvents();
+
+  const ev = compareState.polyEvents[idx];
+  if (!ev || !ev.markets) return;
+
+  const el = $('#cmp-outcomes');
+  let html = '';
+  // Filter to only "Yes" outcomes and dedupe by extracted label
+  const seenLabels = new Set();
+  let colorIdx = 0;
+  // Sort: "reach" before "dip", then by price descending
+  const yesMarkets = ev.markets
+    .filter(m => m.outcome?.toLowerCase() === 'yes')
+    .sort((a, b) => {
+      const aReach = /reach/i.test(a.question);
+      const bReach = /reach/i.test(b.question);
+      if (aReach !== bReach) return aReach ? -1 : 1;
+      const aPrice = parseFloat((a.question?.match(/\$([\d,]+)/) || [])[1]?.replace(/,/g, '') || '0');
+      const bPrice = parseFloat((b.question?.match(/\$([\d,]+)/) || [])[1]?.replace(/,/g, '') || '0');
+      return bPrice - aPrice;
+    });
+
+  yesMarkets.forEach((mkt) => {
+    const q = mkt.question || '';
+    const priceMatch = q.match(/\$[\d,]+/);
+    const priceVal = priceMatch ? priceMatch[0] : '';
+    const isDip = /dip/i.test(q);
+    const isAbove = /above/i.test(q);
+    const direction = isDip ? 'dip' : isAbove ? 'above' : 'reach';
+    const shortLabel = priceVal ? `${priceVal} ${direction}` : q.replace(/^Will (Bitcoin|Ethereum|Solana) /i, '').replace(/\?$/, '');
+
+    // Dedupe by label
+    if (seenLabels.has(shortLabel)) return;
+    seenLabels.add(shortLabel);
+
+    const color = OUTCOME_COLORS[colorIdx % OUTCOME_COLORS.length];
+    const fp = parseFloat(mkt.finalPrice);
+    const priceStr = !isNaN(fp) ? (fp * 100).toFixed(0) + '%' : '?';
+    html += `<label class="outcome-check">
+      <input type="checkbox" onchange="toggleOutcome('${mkt.tokenId}', this.checked, ${colorIdx})" data-token="${mkt.tokenId}">
+      <span class="outcome-line-color" style="background:${color}"></span>
+      <span class="outcome-label">${esc(shortLabel)}</span>
+      <span class="outcome-price">${priceStr}</span>
+    </label>`;
+    colorIdx++;
+  });
+
+  el.innerHTML = html || '<div style="font-size:10px;color:var(--text-dim)">No outcomes available</div>';
+  renderCompareChart();
+}
+
+async function toggleOutcome(tokenId, checked, colorIdx) {
+  if (!tokenId) return;
+
+  if (checked) {
+    const statusEl = $('#cmp-status');
+    statusEl.textContent = 'Loading outcome history...';
+    statusEl.style.color = 'var(--accent)';
+
+    try {
+      // Compute event date range for paginated price history fetch
+      const ev = compareState.polyEvents[compareState.selectedEventIdx];
+      let phUrl = `/api/compare/price-history/${tokenId}?interval=all`;
+      if (ev) {
+        // Use month boundaries from the selected year/month, with buffer
+        const year = +$('#cmp-year').value;
+        const month = +$('#cmp-month').value;
+        const rangeStart = Math.floor(new Date(Date.UTC(year, month - 1, 1)).getTime() / 1000);
+        // End: use event endDate if available, otherwise end of month + buffer
+        const eventEnd = ev.endDate ? new Date(ev.endDate).getTime() / 1000 : 0;
+        const monthEnd = Math.floor(new Date(Date.UTC(year, month, 3)).getTime() / 1000);
+        const rangeEnd = Math.max(eventEnd, monthEnd);
+        phUrl += `&startTs=${rangeStart}&endTs=${rangeEnd}`;
+      }
+      const res = await fetch(phUrl);
+      const data = await res.json();
+      const color = OUTCOME_COLORS[colorIdx % OUTCOME_COLORS.length];
+      const mkt = ev?.markets?.find(m => m.tokenId === tokenId);
+
+      const q = mkt?.question || '';
+      const priceMatch = q.match(/\$[\d,]+/);
+      const isDip = /dip/i.test(q);
+      const isAbove = /above/i.test(q);
+      const direction = isDip ? 'dip' : isAbove ? 'above' : 'reach';
+      const label = priceMatch ? `${priceMatch[0]} ${direction}` : (q || mkt?.outcome || 'Unknown');
+      const histPoints = data.history || [];
+      compareState.checkedOutcomes.set(tokenId, {
+        outcome: label,
+        history: histPoints,
+        color,
+      });
+
+      if (histPoints.length === 0) {
+        statusEl.textContent = `No price history available for this outcome`;
+        statusEl.style.color = 'var(--warn)';
+      } else {
+        statusEl.textContent = `Loaded ${data.count || 0} points`;
+        statusEl.style.color = 'var(--success)';
+      }
+    } catch (err) {
+      statusEl.textContent = `Error: ${err.message}`;
+      statusEl.style.color = 'var(--danger)';
+    }
+  } else {
+    compareState.checkedOutcomes.delete(tokenId);
+  }
+
+  renderCompareChart();
+}
+
+function renderCompareChart() {
+  const emptyEl = $('#cmp-empty');
+  const canvas = $('#compareChart');
+
+  if (!compareState.binanceData?.klines?.length) {
+    emptyEl.style.display = 'flex';
+    canvas.style.display = 'none';
+    return;
+  }
+
+  emptyEl.style.display = 'none';
+  canvas.style.display = 'block';
+
+  if (compareChart) { compareChart.destroy(); compareChart = null; }
+
+  const klines = compareState.binanceData.klines;
+  const symbol = compareState.binanceData.symbol;
+
+  const binanceDataset = {
+    label: `${symbol} Close`,
+    data: klines.map(k => ({ x: k.openTime, y: k.close })),
+    borderColor: '#4ade80',
+    backgroundColor: 'rgba(74,222,128,0.06)',
+    borderWidth: 2,
+    pointRadius: 1,
+    pointHoverRadius: 4,
+    yAxisID: 'y',
+    fill: true,
+    tension: 0.2,
+    order: 0,
+  };
+
+  const outcomeDatasets = [];
+  let maxProb = 0;
+  for (const [_, info] of compareState.checkedOutcomes) {
+    if (info.history.length === 0) continue;
+    // Downsample if too many points (keep ~500 max for smooth rendering)
+    let pts = info.history;
+    if (pts.length > 500) {
+      const step = Math.ceil(pts.length / 500);
+      pts = pts.filter((_, i) => i % step === 0);
+    }
+    const mapped = pts.map(pt => ({ x: pt.t * 1000, y: pt.p }));
+    for (const pt of mapped) { if (pt.y > maxProb) maxProb = pt.y; }
+    outcomeDatasets.push({
+      label: `PM: ${info.outcome}`,
+      data: mapped,
+      borderColor: info.color,
+      backgroundColor: 'transparent',
+      borderWidth: 2,
+      pointRadius: 0,
+      pointHoverRadius: 5,
+      yAxisID: 'y1',
+      borderDash: [4, 2],
+      tension: 0.3,
+      order: 1,
+    });
+  }
+  // Auto-scale: if all probs are low, zoom in; otherwise use 0-1
+  const y1Max = maxProb > 0.5 ? 1 : maxProb > 0.2 ? Math.ceil(maxProb * 5) / 5 : maxProb > 0.05 ? Math.ceil(maxProb * 10) / 10 : maxProb > 0 ? Math.ceil(maxProb * 100) / 100 + 0.01 : 1;
+
+  const ctx = canvas.getContext('2d');
+  compareChart = new Chart(ctx, {
+    type: 'line',
+    data: { datasets: [binanceDataset, ...outcomeDatasets] },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          display: true, position: 'top',
+          labels: { color: '#d1d5e0', font: { size: 11, family: "'JetBrains Mono', 'Fira Code', monospace" }, boxWidth: 14, padding: 12 },
+        },
+        tooltip: {
+          backgroundColor: '#1c1f2b', borderColor: '#282d3d', borderWidth: 1,
+          cornerRadius: 8, padding: 10,
+          titleFont: { size: 11, family: "'JetBrains Mono', 'Fira Code', monospace" },
+          bodyFont: { size: 11, family: "'JetBrains Mono', 'Fira Code', monospace" },
+          titleColor: '#d1d5e0', bodyColor: '#d1d5e0',
+          callbacks: {
+            title: items => items[0] ? new Date(items[0].parsed.x).toLocaleDateString() : '',
+            label: item => item.dataset.yAxisID === 'y1'
+              ? `${item.dataset.label}: ${(item.parsed.y * 100).toFixed(1)}%`
+              : `${item.dataset.label}: $${item.parsed.y.toLocaleString()}`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          type: 'time', time: { unit: 'day', displayFormats: { day: 'MMM d' } },
+          grid: { color: 'rgba(40,45,61,0.4)' },
+          ticks: { color: '#636981', font: { size: 10, family: "'JetBrains Mono', 'Fira Code', monospace" } },
+        },
+        y: {
+          type: 'linear', position: 'left',
+          title: { display: true, text: `${symbol} Price ($)`, color: '#4ade80', font: { size: 11, family: "'JetBrains Mono', 'Fira Code', monospace" } },
+          grid: { color: 'rgba(40,45,61,0.25)' },
+          ticks: { color: '#4ade80', font: { size: 10, family: "'JetBrains Mono', 'Fira Code', monospace" }, callback: v => '$' + v.toLocaleString() },
+        },
+        y1: {
+          type: 'linear', position: 'right', min: 0, max: y1Max,
+          title: { display: true, text: 'Polymarket Probability', color: '#6c8aec', font: { size: 11, family: "'JetBrains Mono', 'Fira Code', monospace" } },
+          grid: { drawOnChartArea: false },
+          ticks: { color: '#6c8aec', font: { size: 10, family: "'JetBrains Mono', 'Fira Code', monospace" }, callback: v => (v * 100).toFixed(0) + '%' },
+        },
+      },
+    },
+  });
+}
+
+// ─── ClickHouse Sync + SQL ─────────────────────────────────────────
+
+async function checkDbStatus() {
+  try {
+    const res = await fetch('/api/db/stats');
+    const data = await res.json();
+    if (data.ready) {
+      $('#db-status').textContent = 'CH: connected';
+      $('#db-status').style.color = 'var(--success)';
+      $('#sql-panel').style.display = 'block';
+      return true;
+    }
+  } catch {}
+  $('#db-status').textContent = 'CH: offline';
+  $('#db-status').style.color = 'var(--text-dim)';
+  return false;
+}
+
+async function syncToClickHouse() {
+  const coin = $('#cmp-coin').value;
+  const year = +$('#cmp-year').value;
+  const month = +$('#cmp-month').value;
+
+  const dbSt = $('#db-status');
+  const btn = $('#cmp-sync-db');
+  btn.disabled = true;
+  dbSt.textContent = 'Syncing...';
+  dbSt.style.color = 'var(--accent)';
+
+  try {
+    const res = await fetch('/api/db/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ coin, year, month, force: false }),
+    });
+
+    if (res.headers.get('content-type')?.includes('text/event-stream')) {
+      // Read SSE stream
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        let eventType = '';
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            eventType = line.slice(7);
+          } else if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (eventType === 'progress') {
+                const p = data;
+                dbSt.textContent = `Sync: ${p.phase} - ${p.detail || ''} (${p.pricePointsInserted} pts)`;
+              } else if (eventType === 'done') {
+                dbSt.textContent = `Synced: ${data.eventsCount} events, ${data.pricePointsCount} pts, ${data.klinesCount} klines (${(data.durationMs/1000).toFixed(1)}s)`;
+                dbSt.style.color = 'var(--success)';
+              } else if (eventType === 'error') {
+                dbSt.textContent = `Sync error: ${data.error}`;
+                dbSt.style.color = 'var(--danger)';
+              }
+            } catch {}
+          }
+        }
+      }
+    } else {
+      const data = await res.json();
+      if (data.error) {
+        dbSt.textContent = `Error: ${data.error}`;
+        dbSt.style.color = 'var(--danger)';
+      } else {
+        dbSt.textContent = 'Sync: already completed';
+        dbSt.style.color = 'var(--success)';
+      }
+    }
+  } catch (err) {
+    dbSt.textContent = `Sync error: ${err.message}`;
+    dbSt.style.color = 'var(--danger)';
+  }
+  btn.disabled = false;
+}
+
+const SQL_TEMPLATES = {
+  stats: `SELECT 'events' AS tbl, count() AS rows FROM scanner.events
+UNION ALL SELECT 'markets', count() FROM scanner.markets
+UNION ALL SELECT 'price_history', count() FROM scanner.price_history
+UNION ALL SELECT 'binance_klines', count() FROM scanner.binance_klines`,
+
+  events: `SELECT e.event_id, e.title, e.start_date, e.end_date, e.closed, e.volume,
+  count(DISTINCT m.token_id) AS tokens,
+  sum(ph.cnt) AS price_points
+FROM scanner.events e
+LEFT JOIN scanner.markets m ON m.event_id = e.event_id
+LEFT JOIN (SELECT token_id, count() AS cnt FROM scanner.price_history GROUP BY token_id) ph ON ph.token_id = m.token_id
+WHERE e.coin = 'BTC' AND e.period = '2026-01'
+GROUP BY e.event_id, e.title, e.start_date, e.end_date, e.closed, e.volume
+ORDER BY e.volume DESC`,
+
+  daily: `WITH dp AS (
+  SELECT toDate(toDateTime(open_time/1000)) AS day, close AS coin_close
+  FROM scanner.binance_klines
+  WHERE symbol = 'BTCUSDT' AND interval = '1d'
+),
+probs AS (
+  SELECT toDate(toDateTime(ph.ts)) AS day, m.question,
+    avg(ph.price) AS avg_prob, count() AS pts
+  FROM scanner.price_history ph
+  JOIN scanner.markets m ON m.token_id = ph.token_id
+  JOIN scanner.events e ON e.event_id = m.event_id
+  WHERE e.coin = 'BTC' AND e.period = '2026-01' AND m.outcome = 'Yes'
+  GROUP BY day, m.question
+)
+SELECT dp.day, dp.coin_close, probs.question, round(probs.avg_prob * 100, 1) AS prob_pct
+FROM dp LEFT JOIN probs ON dp.day = probs.day
+ORDER BY dp.day, probs.question`,
+
+  top_tokens: `SELECT ph.token_id, m.question, m.outcome, e.title,
+  count() AS points, min(toDateTime(ph.ts)) AS first_ts, max(toDateTime(ph.ts)) AS last_ts
+FROM scanner.price_history ph
+JOIN scanner.markets m ON m.token_id = ph.token_id
+JOIN scanner.events e ON e.event_id = m.event_id
+GROUP BY ph.token_id, m.question, m.outcome, e.title
+ORDER BY points DESC
+LIMIT 20`,
+
+  price_range: `SELECT e.coin, e.period,
+  min(toDateTime(ph.ts)) AS earliest, max(toDateTime(ph.ts)) AS latest,
+  count() AS total_points
+FROM scanner.price_history ph
+JOIN scanner.markets m ON m.token_id = ph.token_id
+JOIN scanner.events e ON e.event_id = m.event_id
+GROUP BY e.coin, e.period
+ORDER BY e.coin, e.period`,
+};
+
+function loadSqlTemplate() {
+  const key = $('#sql-templates').value;
+  if (key && SQL_TEMPLATES[key]) {
+    $('#sql-input').value = SQL_TEMPLATES[key];
+  }
+}
+
+async function runSqlQuery() {
+  const sql = $('#sql-input').value.trim();
+  if (!sql) return;
+
+  const statusEl = $('#sql-status');
+  const resultsEl = $('#sql-results');
+  statusEl.textContent = 'Running...';
+  statusEl.style.color = 'var(--accent)';
+  resultsEl.innerHTML = '';
+
+  try {
+    const res = await fetch('/api/db/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sql }),
+    });
+    const data = await res.json();
+
+    if (data.error) {
+      statusEl.textContent = `Error: ${data.error}`;
+      statusEl.style.color = 'var(--danger)';
+      return;
+    }
+
+    const { columns, rows } = data;
+    statusEl.textContent = `${rows.length} rows`;
+    statusEl.style.color = 'var(--success)';
+
+    if (rows.length === 0) {
+      resultsEl.innerHTML = '<div style="font-size:10px;color:var(--text-dim)">No results</div>';
+      return;
+    }
+
+    // Render as HTML table
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:12px;font-family:var(--mono)">';
+    html += '<thead><tr>';
+    for (const col of columns) {
+      html += `<th style="text-align:left;padding:6px 10px;border-bottom:1px solid var(--border);color:var(--accent);white-space:nowrap;font-weight:500">${esc(col)}</th>`;
+    }
+    html += '</tr></thead><tbody>';
+    for (const row of rows.slice(0, 200)) {
+      html += '<tr>';
+      for (const col of columns) {
+        const val = row[col];
+        const display = val === null || val === undefined ? '<span style="color:var(--text-dim)">NULL</span>' : esc(String(val));
+        html += `<td style="padding:5px 10px;border-bottom:1px solid rgba(40,45,61,0.3);white-space:nowrap">${display}</td>`;
+      }
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    if (rows.length > 200) {
+      html += `<div style="font-size:10px;color:var(--warn);margin-top:4px">Showing 200 of ${rows.length} rows</div>`;
+    }
+    resultsEl.innerHTML = html;
+  } catch (err) {
+    statusEl.textContent = `Error: ${err.message}`;
+    statusEl.style.color = 'var(--danger)';
+  }
+}
+
+// ─── Init ──────────────────────────────────────────────────────────
+connectSSE();
+fetchEvents();
+fetchOpportunities();
+checkDbStatus();
+</script>
+</body>
+</html>

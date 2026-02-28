@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "arb-ws.fullname" . }}
+  labels:
+    {{- include "arb-ws.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "arb-ws.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "arb-ws.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "arb-ws.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+      - name: {{ .Chart.Name }}
+        securityContext:
+          {{- toYaml .Values.securityContext | nindent 12 }}
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        env:
+        - name: HTTP_ADDR
+          value: {{ .Values.env.HTTP_ADDR | quote }}
+        - name: EDGE_MIN_ROR_PCT
+          value: {{ .Values.env.EDGE_MIN_ROR_PCT | quote }}
+        - name: TITLE_SIM
+          value: {{ .Values.env.TITLE_SIM | quote }}
+        - name: TIME_WINDOW_H
+          value: {{ .Values.env.TIME_WINDOW_H | quote }}
+        - name: PM_CHUNK
+          value: {{ .Values.env.PM_CHUNK | quote }}
+        {{- if .Values.env.KALSHI_KEY_ID }}
+        - name: KALSHI_KEY_ID
+          value: {{ .Values.env.KALSHI_KEY_ID | quote }}
+        {{- end }}
+        {{- if .Values.secret.enabled }}
+        - name: KALSHI_PRIVATE_KEY_PATH
+          value: "{{ .Values.secret.mountPath }}/kalshi-key.pem"
+        {{- end }}
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        livenessProbe:
+          {{- toYaml .Values.livenessProbe | nindent 12 }}
+        readinessProbe:
+          {{- toYaml .Values.readinessProbe | nindent 12 }}
+        resources:
+          {{- toYaml .Values.resources | nindent 12 }}
+        {{- if .Values.secret.enabled }}
+        volumeMounts:
+        - name: kalshi-key
+          mountPath: {{ .Values.secret.mountPath }}
+          readOnly: true
+        {{- end }}
+      {{- if .Values.secret.enabled }}
+      volumes:
+      - name: kalshi-key
+        secret:
+          secretName: {{ .Values.secret.name }}
+          defaultMode: 0400
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

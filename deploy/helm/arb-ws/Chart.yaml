@@ -1,0 +1,14 @@
+apiVersion: v2
+name: arb-ws
+description: A Helm chart for the WebSocket arbitrage service
+type: application
+version: 0.1.0
+appVersion: "v0.1.0"
+keywords:
+  - arbitrage
+  - websocket
+  - polymarket
+  - kalshi
+maintainers:
+  - name: Artem Gubar
+    email: artemgubar@example.com
