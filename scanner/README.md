@@ -1,5 +1,7 @@
 # Polymarket Scanner
 
+[![CI](https://github.com/anthropics/polymarket-scanner/actions/workflows/ci.yml/badge.svg)](https://github.com/anthropics/polymarket-scanner/actions/workflows/ci.yml)
+
 Real-time orderbook scanner for crypto prediction markets on [Polymarket](https://polymarket.com). Tracks bid/ask spreads, detects arbitrage opportunities, and compares prediction odds against Binance spot prices with full historical analytics powered by ClickHouse.
 
 <!-- ![Screenshot](docs/screenshot.png) -->
@@ -36,6 +38,47 @@ The scanner will be available at `http://localhost:3847`.
 npm install
 cp .env.example .env
 npm run dev
+```
+
+## Development
+
+```bash
+npm run dev          # Start with hot reload
+npm run build        # Compile TypeScript to dist/
+npm run typecheck    # Type-check without emitting
+npm run lint         # Run ESLint
+npm run format       # Auto-format with Prettier
+npm test             # Run all tests
+npm run test:watch   # Run tests in watch mode
+```
+
+### Project Structure
+
+```
+src/
+  index.ts           # Entry point, orchestration, graceful shutdown
+  server.ts          # Express server, API routes, security middleware
+  binance.ts         # Binance klines API client
+  gamma.ts           # Polymarket Gamma API client
+  history.ts         # Historical data fetching
+  ws-client.ts       # WebSocket client for Polymarket CLOB
+  orderbook.ts       # Orderbook analytics engine
+  detector.ts        # Spread/arbitrage opportunity detection
+  telegram.ts        # Telegram notification alerts
+  notion-sync.ts     # Notion integration
+  audit.ts           # DynamoDB audit logging
+  db/
+    connection.ts    # ClickHouse connection management
+    schema.ts        # Table definitions
+    sync.ts          # Historical sync engine
+    queries.ts       # Predefined analytics queries
+  __tests__/
+    binance.test.ts  # Time range helpers
+    orderbook.test.ts# Book state, snapshots, deltas
+    queries.test.ts  # SQL validation & safety
+    server.test.ts   # HTTP API endpoints
+public/
+  index.html         # Single-page frontend (HTML + CSS + JS)
 ```
 
 ## Environment Variables
@@ -94,14 +137,56 @@ npm run dev
 | `GET` | `/api/db/stats` | ClickHouse table statistics |
 | `POST` | `/api/db/query` | Execute read-only SQL query |
 
+## CI/CD
+
+This project uses GitHub Actions for continuous integration and deployment.
+
+**CI Pipeline** (runs on every push/PR to `main`):
+1. **Lint** — ESLint checks across all source files
+2. **Type Check** — TypeScript strict mode validation
+3. **Test** — Vitest unit test suite (49 tests)
+4. **Build** — TypeScript compilation + artifact upload
+5. **Docker** — Docker image build verification with BuildKit cache
+
+**Deploy Pipeline** (runs on push to `main`):
+- SSH into VPS, pulls latest code, rebuilds Docker image, restarts containers
+- Runs a 60-second health check loop against `/api/health`
+- Requires GitHub Secrets: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`
+
+## Deployment
+
+### VPS Setup
+
+```bash
+# On your VPS
+git clone https://github.com/your-username/polymarket-scanner.git
+cd polymarket-scanner
+cp .env.example .env
+# Edit .env with production values
+docker compose up -d
+```
+
+### GitHub Secrets
+
+Set these in your repo settings for automated deployments:
+
+| Secret | Description |
+|---|---|
+| `VPS_HOST` | Server IP or hostname |
+| `VPS_USER` | SSH username |
+| `VPS_SSH_KEY` | Private SSH key (ed25519 recommended) |
+| `VPS_APP_DIR` | App directory on server (default: `~/polymarket-scanner`) |
+
 ## Tech Stack
 
-- **Runtime**: Node.js 20+ / TypeScript
+- **Runtime**: Node.js 20+ / TypeScript (strict mode)
 - **Server**: Express with helmet, CORS, rate limiting
 - **Data**: ClickHouse (historical), DynamoDB (audit)
 - **Frontend**: Vanilla HTML/CSS/JS with Chart.js
 - **APIs**: Polymarket CLOB (WebSocket), Binance (REST), Gamma Markets
 - **Integrations**: Telegram Bot API, Notion API
+- **Testing**: Vitest
+- **CI/CD**: GitHub Actions + Docker
 
 ## License
 

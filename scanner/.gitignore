@@ -24,5 +24,8 @@ Thumbs.db
 *.swp
 *.swo
 
+# Claude Code
+.claude/
+
 # TypeScript cache
 *.tsbuildinfo
