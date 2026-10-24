@@ -1,3 +1,4 @@
+# Standalone scanner development — for full stack use ../docker-compose.yml
 services:
   scanner:
     build: .

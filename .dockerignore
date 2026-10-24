@@ -1,19 +1,23 @@
 .git
 .gitignore
-**/node_modules
-**/.cache
-**/dist
-**/bin
-**/obj
-**/*.log
-**/.DS_Store
-*.md
-.vscode
+.github
+.claude
 .idea
+.vscode
+.DS_Store
+*.md
+*.log
 *.swp
 *.swo
 *~
-deploy/
+
+# Go build artifacts
+bin/
+
+# Scanner (built separately)
+scanner/
+
+# Docker files
+docker-compose.yml
 Makefile
-.dockerignore
-Dockerfile
+deploy/
